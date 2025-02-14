@@ -95,6 +95,7 @@ class CWP_RSS_Builder {
 
 		// Orderby
 		$options = [
+			'modified' => 'Recently Updated',
 			'comment_count' => 'Most Comments',
 			'rand' => 'Random'
 		];
