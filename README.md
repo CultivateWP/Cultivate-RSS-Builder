@@ -27,7 +27,9 @@ After making your selections, click "Get Feed URL" and copy the URL at the top o
 
 ### Feed of updated posts
 
-Set the order to "Recently Updated", and exclude posts published since "3 months ago". When a post is first publihed, the updated date equals the published date, which is why we want to exclude recently published posts.
+Set the order to "Recently Updated", and exclude posts published since "3 months ago". When a post is first published, the updated date equals the published date, which is why we want to exclude recently published posts.
+
+![screenshot](https://p198.p4.n0.cdn.zight.com/items/nOuOXb8l/f0138563-bb42-4dd2-b260-4575cc5c1d5b.jpg?source=viewer&v=c1ad6c879c5b85c8ebdc9a02236b9eec)
 
 ### Custom RSS Post Title
 
