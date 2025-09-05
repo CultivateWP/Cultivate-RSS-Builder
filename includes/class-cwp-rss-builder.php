@@ -30,6 +30,7 @@ class CWP_RSS_Builder {
 		//add_filter( 'the_content_feed', array( $this, 'image_in_rss_content' ) );
 		add_filter( 'wp_calculate_image_srcset', array( $this, 'disable_srcset_in_feed' ) );
 		add_action( 'rss2_item', array( $this, 'rss_media_content' ) );
+		add_filter( 'get_post_time', array( $this, 'post_time' ), 10, 3 );
 
 		// Metabox
 		add_action( 'add_meta_boxes', array( $this, 'metabox_register' )         );
@@ -155,6 +156,12 @@ class CWP_RSS_Builder {
 		$this->build_text_input( array(
 			'label'	=> 'Exclude posts older than',
 			'name'	=> 'date',
+		));
+
+		// Exclude recent posts
+		$this->build_text_input( array(
+			'label' => 'Exclude posts published since',
+			'name' => 'recent_date'
 		));
 
 		// Exclude by category
@@ -404,6 +411,9 @@ class CWP_RSS_Builder {
 			if( !empty( $settings['date'] ) ) {
 				$date_query[] = array( 'after' => $settings['date'] );
 			}
+			if ( ! empty( $settings['recent_date'] ) ) {
+				$date_query[] = array( 'before' => $settings['recent_date'] );
+			}
 			if( !empty( $date_query ) )
 				$query->set( 'date_query', $date_query );
 
@@ -516,6 +526,28 @@ class CWP_RSS_Builder {
 			echo '<media:content xmlns:media="http://search.yahoo.com/mrss/" medium="image" type="image/jpeg" url="' . $image[0] . '" width="' . $image[1] . '" height="' . $image[2] . '" />';
 
 		}
+	}
+
+	/**
+	 * Change post time to updated date
+	 */
+	function post_time( $time, $format, $gmt ) {
+
+		if ( ! is_feed() ) {
+			return $time;
+		}
+
+		$settings = $this->get_feed_data();
+		if( empty( $settings )) {
+			return $time;
+		}
+
+		if ( 'modified' == $settings['orderby'] ) {
+			$time = get_post_modified_time( $format );
+		}
+
+
+		return $time;
 	}
 
 	/**

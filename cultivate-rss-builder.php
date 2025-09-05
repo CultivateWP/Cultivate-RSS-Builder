@@ -5,7 +5,7 @@
  * Description: Allows you to build custom RSS feeds for email marketing
  * Author:      CultivateWP
  * Author URI:  https://cultivatewp.com/
- * Version:     1.0.0
+ * Version:     1.1.0
  * Text Domain: cultivate-rss-builder
  *
  * Cultivate RSS Builder is free software: you can redistribute it and/or modify
