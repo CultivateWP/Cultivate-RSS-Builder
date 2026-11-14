@@ -30,6 +30,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+define( 'CWP_RSS_BUILDER_VERSION', '1.1.0' );
+require_once __DIR__ . '/includes/class-cwp-rss-builder-editor.php';
+
 // Load the class
 require_once dirname( __FILE__ ) . '/includes/class-cwp-rss-builder.php';
 
