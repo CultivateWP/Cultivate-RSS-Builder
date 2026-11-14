@@ -6,6 +6,9 @@
  * Author:      CultivateWP
  * Author URI:  https://cultivatewp.com/
  * Version:     1.1.0
+ * Requires PHP: 7.0
+ * License: GPL-2.0-or-later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: cultivate-rss-builder
  *
  * Cultivate RSS Builder is free software: you can redistribute it and/or modify
@@ -18,11 +21,14 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
+ * @package Cultivate_RSS_Builder
+ *
  * You should have received a copy of the GNU General Public License
  * along with Cultivate RSS Builder. If not, see <http://www.gnu.org/licenses/>.
  */
 
 namespace Cultivate\RSS_Builder;
+
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 // Exit if accessed directly.
@@ -31,23 +37,25 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'CWP_RSS_BUILDER_VERSION', '1.1.0' );
+
+require_once __DIR__ . '/includes/class-cwp-rss-builder-settings.php';
 require_once __DIR__ . '/includes/class-cwp-rss-builder-editor.php';
 
-// Load the class
-require_once dirname( __FILE__ ) . '/includes/class-cwp-rss-builder.php';
+// Load the class.
+require_once __DIR__ . '/includes/class-cwp-rss-builder.php';
 
 /**
- * Updater
+ * Register the plugin updater.
+ *
+ * @return void
  */
 function updater() {
 
 	require plugin_dir_path( __FILE__ ) . 'includes/updater/plugin-update-checker.php';
-	$myUpdateChecker = PucFactory::buildUpdateChecker(
+	PucFactory::buildUpdateChecker(
 		'https://github.com/CultivateWP/Cultivate-RSS-Builder/',
-		__FILE__, //Full path to the main plugin file or functions.php.
+		__FILE__, // Full path to the main plugin file or functions.php.
 		'cultivate-rss-builder'
 	);
-
 }
 add_action( 'admin_init', __NAMESPACE__ . '\updater' );
-

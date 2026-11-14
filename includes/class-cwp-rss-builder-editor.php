@@ -291,8 +291,7 @@ class CWP_RSS_Builder_Editor {
 		if ( ! is_array( $boxes ) || ! $post instanceof WP_Post || ! $this->ready_post || $this->ready_post !== (int) $post->ID ) {
 			return $boxes;
 		}
-		$post_boxes = isset( $boxes[ $post->post_type ] ) ? $boxes[ $post->post_type ] : array();
-		foreach ( $post_boxes as $location => $priorities ) {
+		foreach ( $boxes[ $post->post_type ] ?? array() as $location => $priorities ) {
 			foreach ( $priorities as $priority => $registered ) {
 				unset( $boxes[ $post->post_type ][ $location ][ $priority ]['be_rss_builder'] );
 			}

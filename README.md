@@ -7,6 +7,8 @@
 **License:** GPLv2 or later  
 **License URI:** http://www.gnu.org/licenses/gpl-2.0.html
 
+**Requires PHP:** 7.0
+
 Build custom RSS feeds for email marketing. Go to Settings > RSS Builder to create a new feed.
 
 After making your selections, click "Get Feed URL" and copy the URL at the top of the page.
@@ -33,9 +35,9 @@ Set the order to "Recently Updated", and exclude posts published since "3 months
 
 ### Custom RSS Post Title
 
-The block editor has an "RSS Post Title" panel for specifying a separate title for the RSS feed. It saves with the normal post update, using the existing `be_rss_post_title` metadata without a migration. This plugin's legacy metabox is removed when the native panel is available; other plugins may still require metabox save requests.
+Use the "RSS Post Title" panel in the block editor to specify a separate title for the RSS feed. The title saves with the normal post update through WordPress REST, without this plugin's classic metabox save. Existing RSS titles remain in the same metadata field and require no migration.
 
-The classic metabox remains available in the classic editor, WordPress versions older than 5.3, unsupported REST post types, or when required editor assets are unavailable. Omitting the REST field preserves the title; empty text or `"0"` clears it, matching the existing behavior. Unsaved RSS-title edits persist on the normal save rather than autosave.
+The classic-editor metabox remains available when using the classic editor, an unsupported REST controller, WordPress older than 5.3, or when the required native editor assets are unavailable. PHP 7.0 or newer is required. Removing this plugin's legacy metabox does not remove metabox save requests used by other plugins.
 
 Both editors show the RSS title control to users who can edit the post and its RSS title metadata. REST clients can set the title by updating a post with an existing ID. When creating a post through the REST API, omit `cwp_rss_post_title` and set it in a subsequent update.
 
@@ -51,4 +53,12 @@ You should use the `ea_no_newsletter_term_id` filter to specify the term_id used
 
 `add_filter( 'ea_no_newsletter_term_id', function() { return 123; });`
 
-For the focused editor regression checks, see [tests/README.md](tests/README.md).
+### Feed settings and compatibility
+
+Creating a feed requires the `manage_options` capability and a nonce-protected POST from Settings > RSS Builder. Existing `be_filter` hash URLs and inline-array feed URLs remain readable without saving settings. Existing hashes, option names, serialized storage, and encoded RSS title values are retained.
+
+The editor's additional REST field is `cwp_rss_post_title`, available only in the `edit` context. It accepts text; an empty string or `"0"` clears the override, matching previous behavior. Omitting it preserves the existing title. Native support requires a filtered post type that uses `WP_REST_Posts_Controller` or a compatible subclass. Autosaves omit this field, so unsaved RSS-title edits persist on the normal save rather than through autosave.
+
+Feed-count behavior continues to follow WordPress core's existing RSS query normalization, including the site's syndication setting. This refactor does not change core's handling of `posts_per_page` for feeds.
+
+For development checks and the disposable integration-test setup, see [tests/README.md](tests/README.md).

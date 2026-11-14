@@ -1,0 +1,109 @@
+name: Quality checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  standards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+          extensions: mbstring, xml
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist
+      - run: composer validate --strict
+      - run: composer check
+
+  php-syntax:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.0', '7.4', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Check first-party PHP syntax
+        run: find . -path './vendor' -prune -o -path './includes/updater' -prune -o -name '*.php' -print0 | xargs -0 -n 1 php -l
+
+  integration:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: '7.4'
+            wordpress: '6.8.3'
+          - php: '8.3'
+            wordpress: latest
+    services:
+      database:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: cultivate_rss_qa
+          MARIADB_USER: cultivate_rss_qa
+          MARIADB_PASSWORD: local-qa-only
+          MARIADB_ROOT_PASSWORD: local-qa-root-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: wp-cli
+          extensions: mysqli
+          coverage: none
+      - name: Install disposable WordPress
+        env:
+          WP_VERSION: ${{ matrix.wordpress }}
+        run: |
+          mkdir "$RUNNER_TEMP/wordpress"
+          wp core download --path="$RUNNER_TEMP/wordpress" --version="$WP_VERSION"
+          wp config create --path="$RUNNER_TEMP/wordpress" --dbname=cultivate_rss_qa --dbuser=cultivate_rss_qa --dbpass=local-qa-only --dbhost=127.0.0.1:3306
+          wp core install --path="$RUNNER_TEMP/wordpress" --url=http://cultivate-rss-qa.test --title='Cultivate RSS QA' --admin_user=qa-admin --admin_password=local-qa-only-password --admin_email=qa@example.test --skip-email
+          ln -s "$GITHUB_WORKSPACE" "$RUNNER_TEMP/wordpress/wp-content/plugins/cultivate-rss-builder"
+          wp plugin activate cultivate-rss-builder --path="$RUNNER_TEMP/wordpress"
+      - name: Run backend integration checks
+        run: wp eval-file "$GITHUB_WORKSPACE/tests/integration.php" --path="$RUNNER_TEMP/wordpress"
+
+  plugin-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check first-party security and performance patterns
+        uses: wordpress/plugin-check-action@v1
+        with:
+          build-dir: './'
+          categories: security,performance
+          exclude-directories: vendor,node_modules,tests,includes/updater
+
+  javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-fund --no-audit
+      - run: npm run check:js
+      - run: npm run lint:js
+      - run: npm test

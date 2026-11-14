@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file, formatted via [this recommendation](http://keepachangelog.com/).
 
+## [Unreleased]
+- Add a native block-editor RSS title panel that saves with the normal post REST update, retaining a classic-editor fallback.
+- Preserve existing feed hashes, serialized options, RSS-title metadata, international taxonomy slugs, and legacy feed parameters.
+- Require an administrator capability and nonce-protected POST for feed creation; keep public feed URL reads free of settings writes.
+- Validate settings and title inputs, check object-level edit permissions, and escape admin and feed output.
+- Honor the requested GMT flag when using modified timestamps.
+- Require PHP 7.0 or newer for safe decoding of the plugin's extra legacy serialization layer.
+- Add WordPress coding standards, PHP compatibility checks, JavaScript lint/tests, disposable WordPress integration tests, and CI configuration.
+
 ## [1.1.0] = 2025-09-05
 - Add option for "exclude posts published since". Useful for creating a feed of updated posts and excluding any newly published posts (see README).
 

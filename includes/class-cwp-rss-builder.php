@@ -1,40 +1,65 @@
 <?php
 /**
- * Main class
+ * Feed query customization and classic administration.
  *
  * @package      Cultivate_RSS_Builder
  * @author       CultivateWP
  * @since        1.0.0
  * @license      GPL-2.0+
-**/
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+/** Customize RSS feeds and their administration fields. */
 class CWP_RSS_Builder {
 
+	/**
+	 * Current validated feed settings.
+	 *
+	 * @var array
+	 */
 	public $settings = array();
 
+	/**
+	 * Public feed selector and form settings key.
+	 *
+	 * @var string
+	 */
 	public $settings_key = 'be_filter';
 
+	/**
+	 * Settings page slug.
+	 *
+	 * @var string
+	 */
 	public $settings_page = 'be_rss_builder';
 
+	/**
+	 * Legacy post title metadata key.
+	 *
+	 * @var string
+	 */
 	public $rss_post_title_key = 'be_rss_post_title';
 
+	/** Register the feed and administration hooks. */
 	public function __construct() {
 
-		// Settings Page
+		// Settings Page.
 		add_action( 'admin_menu', array( $this, 'register_page' ) );
-		add_action( 'admin_menu', array( $this, 'maybe_redirect' ) );
+		add_action( 'admin_post_cwp_rss_builder_create_feed', array( $this, 'maybe_redirect' ) );
 
-		// Customize RSS Feed
+		// Customize RSS Feed.
 		add_action( 'pre_get_posts', array( $this, 'rss_query' ) );
 		add_filter( 'the_title_rss', array( $this, 'the_title_rss' ) );
-		//add_filter( 'the_excerpt_rss', array( $this, 'image_in_rss_content' ) );
-		//add_filter( 'the_content_feed', array( $this, 'image_in_rss_content' ) );
 		add_filter( 'wp_calculate_image_srcset', array( $this, 'disable_srcset_in_feed' ) );
 		add_action( 'rss2_item', array( $this, 'rss_media_content' ) );
 		add_filter( 'get_post_time', array( $this, 'post_time' ), 10, 3 );
 
-		// Metabox
+		// Metabox.
 		add_action( 'add_meta_boxes', array( $this, 'metabox_register' ), 10, 2 );
-		add_action( 'save_post',      array( $this, 'metabox_save'     ),  1, 2  );
+		add_action( 'save_post', array( $this, 'metabox_save' ), 1, 2 );
 		if ( version_compare( $GLOBALS['wp_version'], '5.3', '>=' ) ) {
 			new CWP_RSS_Builder_Editor( $this );
 		}
@@ -42,225 +67,246 @@ class CWP_RSS_Builder {
 	}
 
 	/**
-	 * Register settings page
+	 * Register the settings page.
 	 *
+	 * @return void
 	 */
 	public function register_page() {
-		add_options_page( 'RSS Builder', 'RSS Builder', 'manage_options', $this->settings_page, array( $this, 'page_content' ) );
+		add_options_page( __( 'RSS Builder', 'cultivate-rss-builder' ), __( 'RSS Builder', 'cultivate-rss-builder' ), 'manage_options', $this->settings_page, array( $this, 'page_content' ) );
 	}
 
 	/**
-	 * If settings array is in URL, redirect to hash-based URL
+	 * Create a feed through the nonce-protected settings form.
 	 *
+	 * @return void
 	 */
 	public function maybe_redirect() {
-
-		if( ! is_admin() )
-			return;
-
-		if( empty( $_GET['page'] ) || $_GET['page'] !== $this->settings_page || empty( $_GET[ $this->settings_key ] ) || ! is_array( $_GET[ $this->settings_key ] ) )
-			return;
-
-		$hash = $this->get_settings_hash( $_GET[ $this->settings_key ] );
-		$redirect_url = add_query_arg(
-			array(
-				$this->settings_key => $hash,
-				'page' => 'be_rss_builder',
+		if ( ! current_user_can( 'manage_options' ) || ! isset( $_SERVER['REQUEST_METHOD'] ) || 'POST' !== $_SERVER['REQUEST_METHOD'] ) {
+			wp_die( esc_html__( 'You cannot create feeds.', 'cultivate-rss-builder' ), '', array( 'response' => 403 ) );
+		}
+		check_admin_referer( 'cwp_rss_builder_create_feed', 'cwp_rss_builder_nonce' );
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- The complete array is validated by the storage helper before any write.
+		$settings = isset( $_POST[ $this->settings_key ] ) ? wp_unslash( $_POST[ $this->settings_key ] ) : array();
+		$hash     = $this->get_settings_hash( $settings );
+		if ( is_wp_error( $hash ) ) {
+			wp_die( esc_html( $hash->get_error_message() ), '', array( 'response' => 400 ) );
+		}
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					$this->settings_key => $hash,
+					'page'              => $this->settings_page,
+				),
+				admin_url( 'options-general.php' )
 			),
-			admin_url( 'options-general.php' )
+			303
 		);
-		wp_redirect( $redirect_url );
 		exit;
 	}
 
+
 	/**
-	 * Build the settings page
+	 * Render the feed settings page.
 	 *
+	 * @return void
 	 */
 	public function page_content() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You cannot manage feeds.', 'cultivate-rss-builder' ), '', array( 'response' => 403 ) );
+		}
 		$this->settings = $this->get_feed_data();
 
 		echo '<div class="wrap">';
-		echo '<h1>Cultivate RSS Builder</h1>';
+		echo '<h1>' . esc_html__( 'Cultivate RSS Builder', 'cultivate-rss-builder' ) . '</h1>';
 		$url = $this->get_feed_url();
-		echo '<p>Feed URL: <a href="' . $url . '">' . $url . '</a></p>';
+		echo '<p>' . esc_html__( 'Feed URL:', 'cultivate-rss-builder' ) . ' <a href="' . esc_url( $url ) . '">' . esc_html( $url ) . '</a></p>';
 
-		echo '<form class="rss-builder" method="GET" action="' . admin_url( 'options-general.php' ) . '">';
-		echo '<input type="hidden" name="page" value="' . $this->settings_page . '" />';
+		echo '<form class="rss-builder" method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		wp_nonce_field( 'cwp_rss_builder_create_feed', 'cwp_rss_builder_nonce' );
+		echo '<input type="hidden" name="action" value="cwp_rss_builder_create_feed" />';
 		echo '<table class="form-table" role="presentation"><tbody>';
 
-		// Category
-		$this->build_term_dropdown( array(
-			'label'		=> 'Limit to category:',
-			'name'		=> 'category',
-			'empty'		=> 'All Categories',
-			'taxonomy'	=> 'category',
-		) );
+		// Category.
+		$this->build_term_dropdown(
+			array(
+				'label'    => __( 'Limit to category:', 'cultivate-rss-builder' ),
+				'name'     => 'category',
+				'empty'    => __( 'All Categories', 'cultivate-rss-builder' ),
+				'taxonomy' => 'category',
+			)
+		);
 
-		// Orderby
-		$options = [
-			'modified' => 'Recently Updated',
-			'comment_count' => 'Most Comments',
-			'rand' => 'Random'
-		];
+		// Orderby.
+		$options = array(
+			'modified'      => __( 'Recently Updated', 'cultivate-rss-builder' ),
+			'comment_count' => __( 'Most Comments', 'cultivate-rss-builder' ),
+			'rand'          => __( 'Random', 'cultivate-rss-builder' ),
+		);
 		if ( function_exists( 'shared_counts' ) ) {
-			$options['meta_value_num'] = 'Most Shares';
-		} 
-		$this->build_dropdown( array(
-			'label' => 'Order by',
-			'name' => 'orderby',
-			'empty' => 'Most Recent',
-			'options' => $options
-		));
-
-		// Posts Per Page
-		$this->build_dropdown( array(
-			'label' => 'How Many',
-			'name' => 'posts_per_page',
-			'empty' => '(Default)',
-			'options' => array(
-				'1' => '1',
-				'5' => '5',
-				'10' => '10',
-				'20' => '20',
+			$options['meta_value_num'] = __( 'Most Shares', 'cultivate-rss-builder' );
+		}
+		$this->build_dropdown(
+			array(
+				'label'   => __( 'Order by', 'cultivate-rss-builder' ),
+				'name'    => 'orderby',
+				'empty'   => __( 'Most Recent', 'cultivate-rss-builder' ),
+				'options' => $options,
 			)
-		));
+		);
 
-		// Offset
-		$this->build_dropdown( array(
-			'label' => 'Offset',
-			'name'  => 'offset',
-			'empty' => '0',
-			'options' => array(
-				'0' => '0',
-				'1' => '1',
-				'2' => '2',
-				'3' => '3',
-				'4' => '4',
-				'5' => '5'
+		// Posts Per Page.
+		$this->build_dropdown(
+			array(
+				'label'   => __( 'How Many', 'cultivate-rss-builder' ),
+				'name'    => 'posts_per_page',
+				'empty'   => __( '(Default)', 'cultivate-rss-builder' ),
+				'options' => array(
+					'1'  => '1',
+					'5'  => '5',
+					'10' => '10',
+					'20' => '20',
+				),
 			)
-		));
+		);
 
-		// Thumbnail Size
-		$this->build_dropdown( array(
-			'label' => 'Thumbnail Size',
-			'name'  => 'image_size',
-			'empty' => '(Default)',
-			'options' => $this->image_size_options()
-		));
+		// Offset.
+		$this->build_dropdown(
+			array(
+				'label'   => __( 'Offset', 'cultivate-rss-builder' ),
+				'name'    => 'offset',
+				'empty'   => '0',
+				'options' => array(
+					'0' => '0',
+					'1' => '1',
+					'2' => '2',
+					'3' => '3',
+					'4' => '4',
+					'5' => '5',
+				),
+			)
+		);
 
-		// Exclude "no newsletter" tag
-		$this->build_checkbox( array(
-			'label' => 'Exclude posts tagged "no-newsletter"',
-			'name' => 'no_newsletter',
-		));
+		// Thumbnail Size.
+		$this->build_dropdown(
+			array(
+				'label'   => __( 'Thumbnail Size', 'cultivate-rss-builder' ),
+				'name'    => 'image_size',
+				'empty'   => __( '(Default)', 'cultivate-rss-builder' ),
+				'options' => $this->image_size_options(),
+			)
+		);
 
-		// Exclude by date
-		$this->build_text_input( array(
-			'label'	=> 'Exclude posts older than',
-			'name'	=> 'date',
-		));
+		// Exclude "no newsletter" tag.
+		$this->build_checkbox(
+			array(
+				'label' => __( 'Exclude posts tagged "no-newsletter"', 'cultivate-rss-builder' ),
+				'name'  => 'no_newsletter',
+			)
+		);
 
-		// Exclude recent posts
-		$this->build_text_input( array(
-			'label' => 'Exclude posts published since',
-			'name' => 'recent_date'
-		));
+		// Exclude by date.
+		$this->build_text_input(
+			array(
+				'label' => __( 'Exclude posts older than', 'cultivate-rss-builder' ),
+				'name'  => 'date',
+			)
+		);
 
-		// Exclude by category
-		$this->build_text_input( array(
-			'label' => 'Exclude posts in category',
-			'name'	=> 'exclude_category',
-		));
+		// Exclude recent posts.
+		$this->build_text_input(
+			array(
+				'label' => __( 'Exclude posts published since', 'cultivate-rss-builder' ),
+				'name'  => 'recent_date',
+			)
+		);
 
-		// Exclude by tag
-		$this->build_text_input( array(
-			'label' => 'Exclude posts in tag',
-			'name'	=> 'exclude_tag',
-		));
+		// Exclude by category.
+		$this->build_text_input(
+			array(
+				'label' => __( 'Exclude posts in category', 'cultivate-rss-builder' ),
+				'name'  => 'exclude_category',
+			)
+		);
 
+		// Exclude by tag.
+		$this->build_text_input(
+			array(
+				'label' => __( 'Exclude posts in tag', 'cultivate-rss-builder' ),
+				'name'  => 'exclude_tag',
+			)
+		);
 
 		echo '</tbody></table>';
 
-		// Form Submit
-		echo '<p class="submit"><button type="submit" class="button button-primary">Get Feed URL</button>';
+		// Form Submit.
+		submit_button( __( 'Get Feed URL', 'cultivate-rss-builder' ) );
 
 		echo '</form>';
 		echo '</div>';
 	}
 
 	/**
-	 * Get Feed URL with hashed settings
+	 * Get the feed URL with its validated settings selector.
 	 *
+	 * @return string
 	 */
 	public function get_feed_url() {
-		$feed = get_bloginfo( 'rss2_url' );
-		$hash = $this->get_hash();
-		return add_query_arg( 'be_filter', $hash, $feed );
+		$filter = $this->requested_filter();
+		$feed   = get_bloginfo( 'rss2_url' );
+		return false === $filter || array() === $filter ? $feed : add_query_arg( $this->settings_key, $filter, $feed );
 	}
 
+
 	/**
-	 * Get hash based on current settings
+	 * Get the existing hash or hash the inline settings.
 	 *
+	 * @return string|false
 	 */
 	public function get_hash() {
-		$hash = false;
-		$settings = !empty( $_GET[ $this->settings_key ] ) ? $_GET[ $this->settings_key ] : false;
-		if( is_array( $settings ) ) {
-			$settings = array_filter( $settings );
-			$hash = $this->get_settings_hash( $settings );
-		} elseif( !empty( $settings ) ) {
-			$hash = $settings;
-		}
-
-		return $hash;
+		$filter = $this->requested_filter();
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- Preserve hashes used by existing feed URLs.
+		return is_array( $filter ) ? sha1( serialize( array_filter( $filter ) ) ) : $filter;
 	}
 
+
 	/**
-	 * Convert settings array into a hash
+	 * Validate and save settings under their legacy hash.
 	 *
+	 * @param array $settings Feed settings.
+	 * @return string|WP_Error
 	 */
 	public function get_settings_hash( $settings = array() ) {
-
-		if( empty( $settings ) )
-			return;
-
-		$hash = sha1( serialize( $settings ) );
-
-		// Save settings as option
-		$feeds = maybe_unserialize( get_option( 'be_rss_builder' ) );
-		if( empty( $feeds ) || ! array_key_exists( $hash, $feeds ) ) {
-			$feeds[ $hash ] = $settings;
-			update_option( 'be_rss_builder', maybe_serialize( $feeds ), false );
-		}
-
-		return $hash;
+		return CWP_RSS_Builder_Settings::save( $settings );
 	}
 
+
 	/**
-	 * Convert hash into settings array
-	 * Settings are stored as a serialized option in database.
-	 * see get_settings_hash() above for how it is saved.
+	 * Read validated settings without changing saved data.
+	 *
+	 * @return array
 	 */
 	public function get_feed_data() {
-		$hash = !empty( $_GET[ $this->settings_key ] ) ? $_GET[ $this->settings_key ] : false;
-		if( empty( $hash ) )
+		$filter = $this->requested_filter();
+		if ( is_array( $filter ) ) {
+			return $filter;
+		}
+		if ( false === $filter ) {
 			return array();
-
-		// Backwards compatibility, before we used hashes we passed full settings array in URL
-		if( is_array( $hash ) )
-			return $hash;
-
-		$feeds = maybe_unserialize( get_option( 'be_rss_builder' ) );
-		if( array_key_exists( $hash, $feeds ) )
-			return $feeds[ $hash ];
-		else
+		}
+		$feeds = CWP_RSS_Builder_Settings::read();
+		if ( is_wp_error( $feeds ) || ! isset( $feeds[ $filter ] ) ) {
 			return array();
+		}
+		$settings = CWP_RSS_Builder_Settings::validate( $feeds[ $filter ] );
+		return is_wp_error( $settings ) ? array() : $settings;
 	}
 
+
 	/**
-	 * Build a dropdown menu on settings page
+	 * Render a settings dropdown.
 	 *
+	 * @param array $args Field arguments.
+	 * @return void
 	 */
 	public function build_dropdown( $args ) {
 
@@ -272,26 +318,29 @@ class CWP_RSS_Builder {
 		echo '</th>';
 
 		echo '<td>';
-		echo '<select name="' . $this->field_name( $args ) . '">';
+		echo '<select id="' . esc_attr( $this->field_name( $args ) ) . '" name="' . esc_attr( $this->field_name( $args ) ) . '">';
 
-		if( !empty( $args['empty'] ) )
-			echo '<option value=""' . selected( false, $current, false ) . '>' . $args['empty'] . '</option>';
+		if ( ! empty( $args['empty'] ) ) {
+			echo '<option value=""' . selected( false, $current, false ) . '>' . esc_html( $args['empty'] ) . '</option>';
+		}
 
-		foreach( $args['options'] as $value => $label ) {
-			echo '<option value="' . $value . '"' . selected( $value, $current, false ) . '>' . $label . '</option>';
+		foreach ( $args['options'] as $value => $label ) {
+			echo '<option value="' . esc_attr( $value ) . '"' . selected( $value, $current, false ) . '>' . esc_html( $label ) . '</option>';
 		}
 		echo '</select></td></tr>';
 	}
 
 	/**
-	 * Build term dropdown on a settings page
+	 * Render a taxonomy settings dropdown.
 	 *
+	 * @param array $args Field arguments.
+	 * @return void
 	 */
 	public function build_term_dropdown( $args ) {
 
 		$args['options'] = array();
-		$terms = get_terms( array( 'taxonomy' => $args['taxonomy'] ) );
-		foreach( $terms as $term ) {
+		$terms           = get_terms( array( 'taxonomy' => $args['taxonomy'] ) );
+		foreach ( is_wp_error( $terms ) ? array() : $terms as $term ) {
 			$args['options'][ $term->slug ] = $term->name;
 		}
 
@@ -299,84 +348,99 @@ class CWP_RSS_Builder {
 	}
 
 	/**
-	 * Build a checkbox on settings page
+	 * Render a settings checkbox.
 	 *
+	 * @param array $args Field arguments.
+	 * @return void
 	 */
 	public function build_checkbox( $args ) {
 		echo '<tr><th scope="row">';
 		echo '</th><td>';
-		echo '<input type="checkbox" name="' . $this->field_name( $args ) . '"' . checked( $this->field_current( $args ), 'on', false ) . ' />';
+		echo '<input type="checkbox" id="' . esc_attr( $this->field_name( $args ) ) . '" name="' . esc_attr( $this->field_name( $args ) ) . '"' . checked( $this->field_current( $args ), 'on', false ) . ' />';
 		$this->field_label( $args );
 		echo '</td></tr>';
 	}
 
 	/**
-	 * Build a text input on settings page
+	 * Render a settings text field.
 	 *
+	 * @param array $args Field arguments.
+	 * @return void
 	 */
 	public function build_text_input( $args ) {
 		echo '<tr><th scope="row">';
 		$this->field_label( $args );
 		echo '</th><td>';
-		echo '<input type="text" name="' . $this->field_name( $args ) . '" value="' . $this->field_current( $args ) . '" />';
+		echo '<input type="text" id="' . esc_attr( $this->field_name( $args ) ) . '" name="' . esc_attr( $this->field_name( $args ) ) . '" value="' . esc_attr( $this->field_current( $args ) ) . '" />';
 		echo '</td></tr>';
 	}
 
 	/**
-	 * Get current value for field
+	 * Get the current escaped field value.
 	 *
+	 * @param array $args Field arguments.
+	 * @return string|false
 	 */
 	public function field_current( $args ) {
-		return !empty( $this->settings[ $args['name'] ] ) ? esc_attr( $this->settings[ $args['name'] ] ) : false;
+		return ! empty( $this->settings[ $args['name'] ] ) ? esc_attr( $this->settings[ $args['name'] ] ) : false;
 	}
 
 	/**
-	 * Build label for setting
+	 * Render the field label.
 	 *
+	 * @param array $args Field arguments.
+	 * @return void
 	 */
 	public function field_label( $args ) {
-		if( !empty( $args['label'] ) )
-			echo '<label style="margin-right: 10px;" for="' . $this->field_name( $args ) . '">' . $args['label'] . '</label>';
+		if ( ! empty( $args['label'] ) ) {
+			echo '<label style="margin-right: 10px;" for="' . esc_attr( $this->field_name( $args ) ) . '">' . esc_html( $args['label'] ) . '</label>';
+		}
 	}
 
 	/**
-	 * Get field name
+	 * Get the nested settings field name.
 	 *
+	 * @param array $args Field arguments.
+	 * @return string
 	 */
 	public function field_name( $args ) {
 		return $this->settings_key . '[' . $args['name'] . ']';
 	}
 
 	/**
-	 * String to array
+	 * Split a comma-separated settings value.
 	 *
+	 * @param string $text Settings value.
+	 * @return string[]
 	 */
 	public function string_to_array( $text ) {
 
-		// convert comma-space to comma
+		// convert comma-space to comma.
 		$text = str_replace( ', ', ',', $text );
 
-		// convert to array using comma
+		// convert to array using comma.
 		return explode( ',', $text );
 	}
 
 	/**
-	 * Image size options
+	 * Get registered image size labels.
 	 *
+	 * @return array
 	 */
 	public function image_size_options() {
-		$additional_sizes = wp_get_additional_image_sizes();
-		$sizes = array(
+		global $_wp_additional_image_sizes;
+		$additional_sizes = function_exists( 'wp_get_additional_image_sizes' ) ? wp_get_additional_image_sizes() : (array) $_wp_additional_image_sizes;
+		$sizes            = array(
 			'thumbnail' => array(
-				'width'   => intval( get_option( 'thumbnail_size_w' ) ),
-				'height'  => intval( get_option( 'thumbnail_size_h' ) ),
-				'crop'    => 1,
+				'width'  => intval( get_option( 'thumbnail_size_w' ) ),
+				'height' => intval( get_option( 'thumbnail_size_h' ) ),
+				'crop'   => 1,
 			),
 		);
-		$sizes = array_merge( $sizes, $additional_sizes );
+		$sizes            = array_merge( $sizes, $additional_sizes );
 
 		$output = array();
-		foreach( $sizes as $size => $settings ) {
+		foreach ( $sizes as $size => $settings ) {
 			$output[ $size ] = $size . ' (' . $settings['width'] . 'x' . $settings['height'] . ')';
 		}
 
@@ -384,171 +448,197 @@ class CWP_RSS_Builder {
 	}
 
 	/**
-	 * Customize the RSS Feed query based on feed settings
+	 * Customize the main RSS query using validated settings.
 	 *
+	 * @param WP_Query $query Current query.
+	 * @return void
 	 */
 	public function rss_query( $query ) {
-		if( $query->is_main_query() && ! is_admin() && $query->is_feed() ) {
+		if ( $query->is_main_query() && ! is_admin() && $query->is_feed() ) {
 
 			$settings = $this->get_feed_data();
-			if( empty( $settings ))
+			if ( empty( $settings ) ) {
 				return;
-
-			// Orderby
-			if( !empty( $settings['orderby'] ) ) {
-				$query->set( 'orderby', esc_attr( $settings['orderby'] ) );
-				if( 'meta_value_num' == $settings['orderby'] )
-					$query->set( 'meta_key', 'shared_counts_total' );
 			}
 
-			// Posts per page
-			if( !empty( $settings['posts_per_page'] ) )
+			// Orderby.
+			if ( ! empty( $settings['orderby'] ) ) {
+				$query->set( 'orderby', esc_attr( $settings['orderby'] ) );
+				if ( 'meta_value_num' === $settings['orderby'] ) {
+					$query->set( 'meta_key', 'shared_counts_total' );
+				}
+			}
+
+			// Posts per page.
+			if ( ! empty( $settings['posts_per_page'] ) ) {
 				$query->set( 'posts_per_page', intval( $settings['posts_per_page'] ) );
+			}
 
-			// Offset
-			if( !empty( $settings['offset'] ) )
+			// Offset.
+			if ( ! empty( $settings['offset'] ) ) {
 				$query->set( 'offset', intval( $settings['offset'] ) );
+			}
 
-			// Date
+			// Date.
 			$date_query = array();
-			if( !empty( $settings['date'] ) ) {
+			if ( ! empty( $settings['date'] ) ) {
 				$date_query[] = array( 'after' => $settings['date'] );
 			}
 			if ( ! empty( $settings['recent_date'] ) ) {
 				$date_query[] = array( 'before' => $settings['recent_date'] );
 			}
-			if( !empty( $date_query ) )
+			if ( ! empty( $date_query ) ) {
 				$query->set( 'date_query', $date_query );
+			}
 
-			// Tax Query
+			// Tax Query.
 			$tax_query = array();
 
-			// -- Category
-			if( !empty( $settings['category'] ) ) {
+			// -- Category.
+			if ( ! empty( $settings['category'] ) ) {
 				$tax_query[] = array(
-					'taxonomy'	=> 'category',
-					'field'		=> 'slug',
-					'terms'		=> $settings['category'],
+					'taxonomy' => 'category',
+					'field'    => 'slug',
+					'terms'    => $settings['category'],
 				);
 			}
 
-			// -- No Newsletter
-			if( !empty( $settings['no_newsletter'] ) && 'on' == $settings['no_newsletter'] ) {
+			// -- No Newsletter.
+			if ( ! empty( $settings['no_newsletter'] ) && 'on' === $settings['no_newsletter'] ) {
 				$no_newsletter_term_id = apply_filters( 'ea_no_newsletter_term_id', 18790 );
-				$tax_query[] = array(
-					'taxonomy'	=> 'post_tag',
-					'field'		=> 'term_id',
-					'terms'		=> $no_newsletter_term_id,
-					'operator'	=> 'NOT IN',
+				$tax_query[]           = array(
+					'taxonomy' => 'post_tag',
+					'field'    => 'term_id',
+					'terms'    => $no_newsletter_term_id,
+					'operator' => 'NOT IN',
 				);
 			}
 
-			// -- Exclude category
-			if( !empty( $settings['exclude_category'] ) ) {
+			// -- Exclude category.
+			if ( ! empty( $settings['exclude_category'] ) ) {
 				$tax_query[] = array(
-					'taxonomy'	=> 'category',
-					'field'		=> 'slug',
-					'terms'		=> $this->string_to_array( $settings['exclude_category'] ),
-					'operator' 	=> 'NOT IN',
+					'taxonomy' => 'category',
+					'field'    => 'slug',
+					'terms'    => $this->string_to_array( $settings['exclude_category'] ),
+					'operator' => 'NOT IN',
 				);
 			}
 
-			// -- Exclude trag
-			if( !empty( $settings['exclude_tag'] ) ) {
+			// -- Exclude trag.
+			if ( ! empty( $settings['exclude_tag'] ) ) {
 				$tax_query[] = array(
-					'taxonomy'	=> 'post_tag',
-					'field'		=> 'slug',
-					'terms'		=> $this->string_to_array( $settings['exclude_tag'] ),
-					'operator' 	=> 'NOT IN',
+					'taxonomy' => 'post_tag',
+					'field'    => 'slug',
+					'terms'    => $this->string_to_array( $settings['exclude_tag'] ),
+					'operator' => 'NOT IN',
 				);
 			}
 
-			// -- Apply tax query
-			if( !empty( $tax_query ) )
+			// -- Apply tax query.
+			if ( ! empty( $tax_query ) ) {
 				$query->set( 'tax_query', $tax_query );
-
+			}
 		}
 	}
 
 	/**
-	 * Customize the post title based on "RSS Post Title" metabox
+	 * Apply the legacy RSS title override.
 	 *
+	 * @param string $title Default feed title.
+	 * @return string
 	 */
 	public function the_title_rss( $title ) {
-		$alt_title = esc_html( get_post_meta( get_the_ID(), $this->rss_post_title_key, true ) );
-		return !empty( $alt_title ) ? $alt_title : $title;
+		$stored    = get_post_meta( get_the_ID(), $this->rss_post_title_key, true );
+		$alt_title = is_string( $stored ) ? esc_html( $stored ) : '';
+		return ! empty( $alt_title ) ? $alt_title : $title;
 	}
 
 	/**
-	 * Images in RSS Content
+	 * Prepend a featured image to RSS content.
 	 *
+	 * @param string $content Feed content.
+	 * @return string
 	 */
 	public function image_in_rss_content( $content ) {
 
 		$settings = $this->get_feed_data();
-		if( !empty( $settings ) )
+		if ( ! empty( $settings ) ) {
 			return $content;
+		}
 
 		global $post;
-		if ( has_post_thumbnail( $post->ID ) ){
+		if ( has_post_thumbnail( $post->ID ) ) {
 
 			$image_size = 'featured';
-			$settings = $this->get_feed_data();
-			if( !empty( $settings ) && !empty( $settings['image_size'] ) )
+			$settings   = $this->get_feed_data();
+			if ( ! empty( $settings ) && ! empty( $settings['image_size'] ) ) {
 				$image_size = esc_attr( $settings['image_size'] );
+			}
 
-			$content = '<img src="' . wp_get_attachment_image_url( get_post_thumbnail_id( $post->ID ), $image_size ) . '" alt="' . get_the_title( $post->ID ) . '"/>' . $content;
+			$content = '<img src="' . esc_url( wp_get_attachment_image_url( get_post_thumbnail_id( $post->ID ), $image_size ) ) . '" alt="' . esc_attr( get_the_title( $post->ID ) ) . '"/>' . $content;
 		}
 		return $content;
 	}
 
 	/**
-	 * Disable srcset in feed
+	 * Disable responsive image sources in feeds.
 	 *
+	 * @param array|false $display Image sources.
+	 * @return array|false
 	 */
-	function disable_srcset_in_feed( $display ) {
-		if( is_feed() )
+	public function disable_srcset_in_feed( $display ) {
+		if ( is_feed() ) {
 			$display = false;
+		}
 		return $display;
 	}
 
 	/**
-	 * Add media content
+	 * Output featured image media metadata.
 	 *
+	 * @return void
 	 */
-	function rss_media_content() {
+	public function rss_media_content() {
 		global $post;
-		if( has_post_thumbnail( $post->ID ) ) {
+		if ( has_post_thumbnail( $post->ID ) ) {
 
 			$image_size = 'featured';
-			$settings = $this->get_feed_data();
-			if( !empty( $settings ) && !empty( $settings['image_size'] ) )
+			$settings   = $this->get_feed_data();
+			if ( ! empty( $settings ) && ! empty( $settings['image_size'] ) ) {
 				$image_size = esc_attr( $settings['image_size'] );
+			}
 
 			$image = wp_get_attachment_image_src( get_post_thumbnail_id( $post->ID ), $image_size );
-			echo '<media:content xmlns:media="http://search.yahoo.com/mrss/" medium="image" type="image/jpeg" url="' . $image[0] . '" width="' . $image[1] . '" height="' . $image[2] . '" />';
+			if ( ! is_array( $image ) || count( $image ) < 3 ) {
+				return;
+			}
+			echo '<media:content xmlns:media="http://search.yahoo.com/mrss/" medium="image" type="image/jpeg" url="' . esc_url( $image[0] ) . '" width="' . (int) $image[1] . '" height="' . (int) $image[2] . '" />';
 
 		}
 	}
 
 	/**
-	 * Change post time to updated date
+	 * Use the modified time for feeds ordered by updates.
+	 *
+	 * @param string|int|false $time Original post time.
+	 * @param string           $format Date format.
+	 * @param bool             $gmt Whether to use GMT.
+	 * @return string|int|false
 	 */
-	function post_time( $time, $format, $gmt ) {
+	public function post_time( $time, $format, $gmt ) {
 
 		if ( ! is_feed() ) {
 			return $time;
 		}
 
 		$settings = $this->get_feed_data();
-		if( empty( $settings )) {
+		if ( empty( $settings ) ) {
 			return $time;
 		}
 
-		if ( 'modified' == $settings['orderby'] ) {
-			$time = get_post_modified_time( $format );
+		if ( isset( $settings['orderby'] ) && 'modified' === $settings['orderby'] ) {
+			$time = get_post_modified_time( $format, $gmt );
 		}
-
 
 		return $time;
 	}
@@ -636,6 +726,23 @@ class CWP_RSS_Builder {
 			)
 		) : array();
 	}
-
+	/**
+	 * Validate the read-only public feed selector.
+	 *
+	 * @return array|string|false Feed selector.
+	 */
+	private function requested_filter() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public feeds are intentionally unauthenticated and never persist settings.
+		if ( ! isset( $_GET[ $this->settings_key ] ) ) {
+			return false;
+		}
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Validate the public hash or array below; no writes occur here.
+		$input = wp_unslash( $_GET[ $this->settings_key ] );
+		if ( is_array( $input ) ) {
+			$settings = CWP_RSS_Builder_Settings::validate( $input );
+			return is_wp_error( $settings ) ? false : $settings;
+		}
+		return is_string( $input ) && preg_match( '/^[a-f0-9]{40}$/D', $input ) ? $input : false;
+	}
 }
-new CWP_RSS_Builder;
+new CWP_RSS_Builder();
