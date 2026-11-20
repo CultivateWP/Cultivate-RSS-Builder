@@ -31,6 +31,13 @@ foreach ( $GLOBALS['wp_filter']['pre_get_posts']->callbacks as $callbacks ) {
 	}
 }
 cwp_rss_assert( $builder instanceof CWP_RSS_Builder, 'Plugin bootstrap must register its feed hooks.' );
+if ( version_compare( get_bloginfo( 'version' ), '5.3', '<' ) ) {
+	$response = cwp_rss_request( 'GET', '/wp/v2/posts', array(), 0 );
+	cwp_rss_assert( 200 === $response->get_status(), 'Legacy installs can still read the posts REST endpoint.' );
+	WP_CLI::success( 'Legacy REST check passed on WordPress ' . get_bloginfo( 'version' ) . '.' );
+	return;
+}
+
 $before_get = $_GET;
 $before_post = $_POST;
 $before_request = $_REQUEST;
@@ -87,13 +94,19 @@ try {
 	}
 	$view = cwp_rss_request( 'GET', $path, array( 'context' => 'view' ), 0 )->get_data();
 	cwp_rss_assert( ! array_key_exists( $field, $view ), 'Private editor REST field must be absent from public responses.' );
-	$created = cwp_rss_request( 'POST', '/wp/v2/posts', array( 'title' => 'New RSS fixture', 'status' => 'draft', $field => 'New feed title' ), $author );
-	cwp_rss_assert( 201 === $created->get_status(), 'Authorized collection create supports the title field.' );
-	$new_id = $created->get_data()['id']; $post_ids[] = $new_id;
-	cwp_rss_assert( 'New feed title' === get_post_meta( $new_id, 'be_rss_post_title', true ), 'New post gets its RSS title.' );
-	$bad_create = cwp_rss_request( 'POST', '/wp/v2/posts', array( 'title' => 'Never create this', $field => null ), $author );
-	cwp_rss_assert( 400 === $bad_create->get_status(), 'Reject null during collection create.' );
-	cwp_rss_assert( array() === get_posts( array( 'post_type' => 'post', 'post_status' => 'any', 'title' => 'Never create this', 'fields' => 'ids' ) ), 'Invalid create must not leave a new post behind.' );
+	$create_title = 'RSS collection fixture ' . $token;
+	$create_params = array( 'title' => $create_title, 'status' => 'publish' );
+	foreach ( array( 'New feed title', null ) as $value ) {
+		$create_params[ $field ] = $value;
+		$rejected = cwp_rss_request( 'POST', '/wp/v2/posts', $create_params, $author );
+		$matching_posts = get_posts( array( 'post_type' => 'post', 'post_status' => 'any', 'title' => $create_title, 'fields' => 'ids' ) );
+		$post_ids = array_merge( $post_ids, $matching_posts );
+		cwp_rss_assert( 400 === $rejected->get_status() && empty( $matching_posts ), 'Reject the RSS field on collection create before a published post can be inserted.' );
+	}
+	unset( $create_params[ $field ] );
+	$created = cwp_rss_request( 'POST', '/wp/v2/posts', $create_params, $author );
+	cwp_rss_assert( 201 === $created->get_status(), 'Collection create without the RSS field still succeeds.' );
+	$post_ids[] = $created->get_data()['id'];
 	$cpt = wp_insert_post( array( 'post_type' => 'cwp_rss_test', 'post_title' => 'CPT fixture', 'post_author' => $author ), true ); $post_ids[] = $cpt;
 	$cpt_response = cwp_rss_request( 'POST', '/cwp-tests/v1/rss-articles/' . $cpt, array( $field => 'Custom route title' ), $author );
 	cwp_rss_assert( 200 === $cpt_response->get_status(), 'Support filtered CPTs with custom namespace and REST base.' );
@@ -133,19 +146,14 @@ try {
 	cwp_rss_assert( $classic === (string) $parsed->channel->item->title, 'RSS output preserves the legacy title without double encoding.' );
 	$GLOBALS['wp_query'] = $before_wp_query; $GLOBALS['wp_the_query'] = $before_main_query;
 
-	// A new collection object ID does not exist during preflight. Core can create
-	// a draft before a site-specific metadata capability filter denies the field.
 	$deny_meta = static function ( $caps, $cap, $user_id, $args ) {
 		return 'edit_post_meta' === $cap && isset( $args[1] ) && 'be_rss_post_title' === $args[1] ? array( 'do_not_allow' ) : $caps;
 	};
 	add_filter( 'map_meta_cap', $deny_meta, 10, 4 );
 	$denied_meta = cwp_rss_request( 'POST', $path, array( $field => 'Denied metadata', 'content' => 'Never change existing body' ), $author );
 	cwp_rss_assert( 403 === $denied_meta->get_status() && 'Body-only edit' === get_post( $id )->post_content, 'Existing-object metadata capability denial is preflighted before body writes.' );
-	$denied_create = cwp_rss_request( 'POST', '/wp/v2/posts', array( 'title' => 'Denied meta create ' . $token, 'status' => 'draft', $field => 'Denied metadata' ), $author );
-	$partial_posts = get_posts( array( 'post_type' => 'post', 'post_status' => 'any', 'title' => 'Denied meta create ' . $token ) );
-	$partial = $partial_posts ? $partial_posts[0] : null;
-	if ( $partial ) { $post_ids[] = $partial->ID; }
-	cwp_rss_assert( 403 === $denied_create->get_status() && $partial instanceof WP_Post && ! metadata_exists( 'post', $partial->ID, 'be_rss_post_title' ), 'Document core collection partial-write limitation without unsafe generic rollback.' );
+	$body_only = cwp_rss_request( 'POST', $path, array( 'content' => 'Allowed body edit' ), $author );
+	cwp_rss_assert( 200 === $body_only->get_status() && 'Allowed body edit' === get_post( $id )->post_content && esc_attr( $classic ) === get_post_meta( $id, 'be_rss_post_title', true ), 'An editor without RSS title permission can update the article and preserve its RSS title.' );
 	remove_filter( 'map_meta_cap', $deny_meta );
 	wp_set_current_user( $admin );
 

@@ -33,9 +33,11 @@ class CWP_RSS_Builder {
 		add_filter( 'get_post_time', array( $this, 'post_time' ), 10, 3 );
 
 		// Metabox
-		add_action( 'add_meta_boxes', array( $this, 'metabox_register' )         );
+		add_action( 'add_meta_boxes', array( $this, 'metabox_register' ), 10, 2 );
 		add_action( 'save_post',      array( $this, 'metabox_save'     ),  1, 2  );
-		new CWP_RSS_Builder_Editor( $this );
+		if ( version_compare( $GLOBALS['wp_version'], '5.3', '>=' ) ) {
+			new CWP_RSS_Builder_Editor( $this );
+		}
 
 	}
 
@@ -554,16 +556,23 @@ class CWP_RSS_Builder {
 	/**
 	 * Register the classic RSS title metabox.
 	 *
-	 * @return void
+	 * @param string $post_type Current screen's post type.
+	 * @param mixed  $post      Object being edited.
 	 */
-	public function metabox_register() {
-
-		$post_types = $this->get_post_types();
-
-		// Add metabox for each post type found.
-		foreach ( $post_types as $post_type ) {
+	public function metabox_register( $post_type, $post ) {
+		if ( $post instanceof WP_Post && in_array( $post_type, $this->get_post_types(), true ) && $this->can_edit_title( $post->ID ) ) {
 			add_meta_box( 'be_rss_builder', __( 'RSS Post Title', 'cultivate-rss-builder' ), array( $this, 'metabox_render' ), $post_type, 'normal', 'high' );
 		}
+	}
+
+	/**
+	 * Can the current user change the RSS title for this post?
+	 *
+	 * @param int $post_id Post ID.
+	 * @return bool
+	 */
+	public function can_edit_title( $post_id ) {
+		return current_user_can( 'edit_post', $post_id ) && current_user_can( 'edit_post_meta', $post_id, $this->rss_post_title_key );
 	}
 
 	/**
@@ -604,7 +613,7 @@ class CWP_RSS_Builder {
 		if ( ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) || ( defined( 'DOING_AJAX' ) && DOING_AJAX ) || ( defined( 'DOING_CRON' ) && DOING_CRON ) || wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
 			return;
 		}
-		if ( ! $post instanceof WP_Post || ! in_array( $post->post_type, $this->get_post_types(), true ) || ! current_user_can( 'edit_post', $post_id ) || ! current_user_can( 'edit_post_meta', $post_id, $this->rss_post_title_key ) || ! is_string( get_post_meta( $post_id, $this->rss_post_title_key, true ) ) ) {
+		if ( ! $post instanceof WP_Post || ! in_array( $post->post_type, $this->get_post_types(), true ) || ! $this->can_edit_title( $post_id ) || ! is_string( get_post_meta( $post_id, $this->rss_post_title_key, true ) ) ) {
 			return;
 		}
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Preserve literal title text; write_title() encodes legacy storage and all output is escaped.

@@ -125,14 +125,11 @@ class CWP_RSS_Builder_Editor {
 		$route  = $request->get_route();
 		$id     = absint( $request['id'] );
 		$method = $request->get_method();
-		if ( $route === $base && 'POST' === $method && ! $id ) {
-			return current_user_can( $type->cap->create_posts ) ? true : new WP_Error( 'cwp_rss_forbidden', __( 'You cannot create this post.', 'cultivate-rss-builder' ), array( 'status' => 403 ) );
-		}
 		$post = $id ? get_post( $id ) : null;
-		if ( ! $post || $post->post_type !== $type->name || $route !== $base . '/' . $id || ! in_array( $method, array( 'POST', 'PUT', 'PATCH' ), true ) ) {
+		if ( ! $post || $post->post_type !== $type->name || 0 !== strcasecmp( $route, $base . '/' . $id ) || ! in_array( $method, array( 'POST', 'PUT', 'PATCH' ), true ) ) {
 			return new WP_Error( 'cwp_rss_unsupported_route', __( 'The RSS title cannot be changed in this request.', 'cultivate-rss-builder' ), array( 'status' => 400 ) );
 		}
-		if ( ! current_user_can( 'edit_post', $id ) || ! current_user_can( 'edit_post_meta', $id, $this->builder->rss_post_title_key ) ) {
+		if ( ! $this->builder->can_edit_title( $id ) ) {
 			return new WP_Error( 'cwp_rss_forbidden', __( 'You cannot edit this RSS title.', 'cultivate-rss-builder' ), array( 'status' => 403 ) );
 		}
 		if ( ! is_string( get_post_meta( $id, $this->builder->rss_post_title_key, true ) ) ) {
@@ -157,7 +154,7 @@ class CWP_RSS_Builder_Editor {
 		foreach ( $this->types as $type ) {
 			$base  = $this->route_base( $type );
 			$route = $request->get_route();
-			if ( $route === $base || 0 === strpos( $route, $base . '/' ) ) {
+			if ( 0 === stripos( $route, $base . '/' ) ) {
 				$result = $this->validate( $request[ self::FIELD ], $type, $request );
 				return is_wp_error( $result ) ? $result : $response;
 			}
@@ -176,9 +173,13 @@ class CWP_RSS_Builder_Editor {
 		if ( is_wp_error( $prepared ) || ! $request->has_param( self::FIELD ) ) {
 			return $prepared;
 		}
+		// Core assigns the ID before this hook for updates, including the editor's first auto-draft save.
+		if ( empty( $prepared->ID ) ) {
+			return new WP_Error( 'cwp_rss_create_with_title', __( 'Create the post first, then update its RSS title.', 'cultivate-rss-builder' ), array( 'status' => 400 ) );
+		}
+
 		foreach ( $this->types as $type ) {
-			$base = $this->route_base( $type );
-			if ( $request->get_route() === $base || 0 === strpos( $request->get_route(), $base . '/' ) ) {
+			if ( 0 === stripos( $request->get_route(), $this->route_base( $type ) . '/' ) ) {
 				$result = $this->validate( $request[ self::FIELD ], $type, $request );
 				return is_wp_error( $result ) ? $result : $prepared;
 			}
@@ -221,7 +222,7 @@ class CWP_RSS_Builder_Editor {
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
-		if ( ! current_user_can( 'edit_post', $post->ID ) || ! current_user_can( 'edit_post_meta', $post->ID, $this->builder->rss_post_title_key ) ) {
+		if ( ! $this->builder->can_edit_title( $post->ID ) ) {
 			return new WP_Error( 'cwp_rss_forbidden', __( 'You cannot edit this RSS title.', 'cultivate-rss-builder' ), array( 'status' => 403 ) );
 		}
 		return self::write_title( $post->ID, $this->builder->rss_post_title_key, $value );
@@ -249,9 +250,9 @@ class CWP_RSS_Builder_Editor {
 
 	/** Enqueue only for a supported, authorized block-editor post. */
 	public function enqueue() {
-		global $post, $wp_version;
+		global $post;
 		$this->ready_post = 0;
-		if ( version_compare( $wp_version, '5.3', '<' ) || ! $post instanceof WP_Post || ! in_array( $post->post_type, $this->builder->get_post_types(), true ) || ! $this->supported_type( $post->post_type ) || ! current_user_can( 'edit_post', $post->ID ) || ! is_string( get_post_meta( $post->ID, $this->builder->rss_post_title_key, true ) ) ) {
+		if ( ! $post instanceof WP_Post || ! in_array( $post->post_type, $this->builder->get_post_types(), true ) || ! $this->supported_type( $post->post_type ) || ! $this->builder->can_edit_title( $post->ID ) || ! is_string( get_post_meta( $post->ID, $this->builder->rss_post_title_key, true ) ) ) {
 			return;
 		}
 		$deps = array( 'wp-plugins', 'wp-element', 'wp-components', 'wp-data', 'wp-i18n', 'wp-editor', 'wp-edit-post' );

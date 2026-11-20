@@ -37,6 +37,8 @@ The block editor has an "RSS Post Title" panel for specifying a separate title f
 
 The classic metabox remains available in the classic editor, WordPress versions older than 5.3, unsupported REST post types, or when required editor assets are unavailable. Omitting the REST field preserves the title; empty text or `"0"` clears it, matching the existing behavior. Unsaved RSS-title edits persist on the normal save rather than autosave.
 
+Both editors show the RSS title control to users who can edit the post and its RSS title metadata. REST clients can set the title by updating a post with an existing ID. When creating a post through the REST API, omit `cwp_rss_post_title` and set it in a subsequent update.
+
 You can disable RSS titles using:
 
 `add_filter( 'be_rss_builder_post_types', '__return_empty_array' );`
