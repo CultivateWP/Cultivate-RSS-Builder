@@ -33,8 +33,11 @@ class CWP_RSS_Builder {
 		add_filter( 'get_post_time', array( $this, 'post_time' ), 10, 3 );
 
 		// Metabox
-		add_action( 'add_meta_boxes', array( $this, 'metabox_register' )         );
+		add_action( 'add_meta_boxes', array( $this, 'metabox_register' ), 10, 2 );
 		add_action( 'save_post',      array( $this, 'metabox_save'     ),  1, 2  );
+		if ( version_compare( $GLOBALS['wp_version'], '5.3', '>=' ) ) {
+			new CWP_RSS_Builder_Editor( $this );
+		}
 
 	}
 
@@ -551,73 +554,88 @@ class CWP_RSS_Builder {
 	}
 
 	/**
-	 * Register metabox
+	 * Register the classic RSS title metabox.
 	 *
+	 * @param string $post_type Current screen's post type.
+	 * @param mixed  $post      Object being edited.
 	 */
-	function metabox_register() {
-
-		$post_types = apply_filters( 'be_rss_builder_post_types', array( 'post' ) );
-
-		// Add metabox for each post type found
-		foreach ( $post_types as $post_type ) {
-			add_meta_box( 'be_rss_builder', 'RSS Post Title', array( $this, 'metabox_render' ), $post_type, 'normal', 'high' );
+	public function metabox_register( $post_type, $post ) {
+		if ( $post instanceof WP_Post && in_array( $post_type, $this->get_post_types(), true ) && $this->can_edit_title( $post->ID ) ) {
+			add_meta_box( 'be_rss_builder', __( 'RSS Post Title', 'cultivate-rss-builder' ), array( $this, 'metabox_render' ), $post_type, 'normal', 'high' );
 		}
 	}
 
 	/**
-	 * Output the metabox
+	 * Can the current user change the RSS title for this post?
 	 *
-	 * @since 1.6.0
+	 * @param int $post_id Post ID.
+	 * @return bool
 	 */
-	function metabox_render() {
+	public function can_edit_title( $post_id ) {
+		return current_user_can( 'edit_post', $post_id ) && current_user_can( 'edit_post_meta', $post_id, $this->rss_post_title_key );
+	}
+
+	/**
+	 * Render the classic RSS title field.
+	 *
+	 * @return void
+	 */
+	public function metabox_render() {
 
 		$current = get_post_meta( get_the_ID(), $this->rss_post_title_key, true );
+		if ( ! is_string( $current ) ) {
+			echo '<p>' . esc_html__( 'The saved RSS title is not text and has not been changed.', 'cultivate-rss-builder' ) . '</p>';
+			return;
+		}
 
-		// Security nonce
+		// Security nonce.
 		wp_nonce_field( 'be_rss_builder', 'be_rss_builder_nonce' );
 
-		echo '<p><label for="' . $this->rss_post_title_key . '">RSS Post Title</label>';
-		echo '<input class="widefat" type="text" id="' . $this->rss_post_title_key . '" name="' . $this->rss_post_title_key . '" value="' . esc_attr( $current ) . '" />';
+		echo '<p><label for="' . esc_attr( $this->rss_post_title_key ) . '">' . esc_html__( 'RSS Post Title', 'cultivate-rss-builder' ) . '</label>';
+		echo '<input class="widefat" type="text" id="' . esc_attr( $this->rss_post_title_key ) . '" name="' . esc_attr( $this->rss_post_title_key ) . '" value="' . esc_attr( $current ) . '" />';
 		echo '</p>';
-
 	}
 
 	/**
-	 * Handle metabox saves
+	 * Save an authorized classic RSS title submission.
 	 *
-	 * @since 1.6.0
+	 * @param int     $post_id Post ID.
+	 * @param WP_Post $post Current post.
+	 * @return void
 	 */
-	function metabox_save( $post_id, $post ) {
-
-		// Security check
-		if ( ! isset( $_POST['be_rss_builder_nonce'] ) || ! wp_verify_nonce( $_POST['be_rss_builder_nonce'], 'be_rss_builder' ) ) {
+	public function metabox_save( $post_id, $post ) {
+		if ( ! isset( $_POST['be_rss_builder_nonce'], $_POST[ $this->rss_post_title_key ] ) || ! is_string( $_POST['be_rss_builder_nonce'] ) || ! is_string( $_POST[ $this->rss_post_title_key ] ) ) {
 			return;
 		}
-
-		// Bail out if running an autosave, ajax, cron.
-		if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['be_rss_builder_nonce'] ) ), 'be_rss_builder' ) ) {
 			return;
 		}
-		if ( defined( 'DOING_AJAX' ) && DOING_AJAX ) {
+		if ( ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) || ( defined( 'DOING_AJAX' ) && DOING_AJAX ) || ( defined( 'DOING_CRON' ) && DOING_CRON ) || wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
 			return;
 		}
-		if ( defined( 'DOING_CRON' ) && DOING_CRON ) {
+		if ( ! $post instanceof WP_Post || ! in_array( $post->post_type, $this->get_post_types(), true ) || ! $this->can_edit_title( $post_id ) || ! is_string( get_post_meta( $post_id, $this->rss_post_title_key, true ) ) ) {
 			return;
 		}
-
-		// Bail out if the user doesn't have the correct permissions to update the slider.
-		if ( ! current_user_can( 'edit_post', $post_id ) ) {
-			return;
-		}
-
-		$value = esc_attr( $_POST[ $this->rss_post_title_key ] );
-
-		// Either save or delete they post meta
-		if ( !empty( $value ) ) {
-			update_post_meta( $post_id, $this->rss_post_title_key, $value );
-		} else {
-			delete_post_meta( $post_id, $this->rss_post_title_key );
-		}
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Preserve literal title text; write_title() encodes legacy storage and all output is escaped.
+		CWP_RSS_Builder_Editor::write_title( $post_id, $this->rss_post_title_key, wp_unslash( $_POST[ $this->rss_post_title_key ] ) );
 	}
+
+	/**
+	 * Get allowed existing post types.
+	 *
+	 * @return string[] Post types.
+	 */
+	public function get_post_types() {
+		$types = apply_filters( 'be_rss_builder_post_types', array( 'post' ) );
+		return is_array( $types ) ? array_values(
+			array_filter(
+				$types,
+				static function ( $type ) {
+					return is_string( $type ) && post_type_exists( $type );
+				}
+			)
+		) : array();
+	}
+
 }
 new CWP_RSS_Builder;

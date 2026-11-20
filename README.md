@@ -33,7 +33,13 @@ Set the order to "Recently Updated", and exclude posts published since "3 months
 
 ### Custom RSS Post Title
 
-This plugin also adds a "RSS Post Title" metabox for specifying a separate title for use in the RSS feed. You can disable this using:
+The block editor has an "RSS Post Title" panel for specifying a separate title for the RSS feed. It saves with the normal post update, using the existing `be_rss_post_title` metadata without a migration. This plugin's legacy metabox is removed when the native panel is available; other plugins may still require metabox save requests.
+
+The classic metabox remains available in the classic editor, WordPress versions older than 5.3, unsupported REST post types, or when required editor assets are unavailable. Omitting the REST field preserves the title; empty text or `"0"` clears it, matching the existing behavior. Unsaved RSS-title edits persist on the normal save rather than autosave.
+
+Both editors show the RSS title control to users who can edit the post and its RSS title metadata. REST clients can set the title by updating a post with an existing ID. When creating a post through the REST API, omit `cwp_rss_post_title` and set it in a subsequent update.
+
+You can disable RSS titles using:
 
 `add_filter( 'be_rss_builder_post_types', '__return_empty_array' );`
 
@@ -44,3 +50,5 @@ When building your feed, there's a checkbox labeled "Exclude posts tagged 'no-ne
 You should use the `ea_no_newsletter_term_id` filter to specify the term_id used for this tag. Ex:
 
 `add_filter( 'ea_no_newsletter_term_id', function() { return 123; });`
+
+For the focused editor regression checks, see [tests/README.md](tests/README.md).
