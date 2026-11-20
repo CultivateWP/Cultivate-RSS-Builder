@@ -2,8 +2,8 @@
 
 **Contributors:** billerickson  
 **Requires at least:** 4.6  
-**Tested up to:** 6.8  
-**Stable tag:** 1.1.0  
+**Tested up to:** 7.1\
+**Stable tag:** 1.2.0\
 **License:** GPLv2 or later  
 **License URI:** http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -55,10 +55,10 @@ You should use the `ea_no_newsletter_term_id` filter to specify the term_id used
 
 ### Feed settings and compatibility
 
-Creating a feed requires the `manage_options` capability and a nonce-protected POST from Settings > RSS Builder. Existing `be_filter` hash URLs and inline-array feed URLs remain readable without saving settings. Existing hashes, option names, serialized storage, and encoded RSS title values are retained.
+Creating a feed requires the `manage_options` capability and a nonce-protected POST from Settings > RSS Builder. Existing `be_filter` hash URLs and inline-array feed URLs remain readable without saving settings. Version 1.2.0 saves each new feed separately so simultaneous submissions keep their own settings. Existing feeds continue to use their original URLs and stored settings without a migration.
 
 The editor's additional REST field is `cwp_rss_post_title`, available only in the `edit` context. It accepts text; an empty string or `"0"` clears the override, matching previous behavior. Omitting it preserves the existing title. Native support requires a filtered post type that uses `WP_REST_Posts_Controller` or a compatible subclass. Autosaves omit this field, so unsaved RSS-title edits persist on the normal save rather than through autosave.
 
 Feed-count behavior continues to follow WordPress core's existing RSS query normalization, including the site's syndication setting. This refactor does not change core's handling of `posts_per_page` for feeds.
 
-For development checks and the disposable integration-test setup, see [tests/README.md](tests/README.md).
+For development checks and the disposable integration-test setup, see [the development checks](https://github.com/CultivateWP/Cultivate-RSS-Builder/blob/master/tests/README.md).

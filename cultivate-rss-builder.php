@@ -5,7 +5,7 @@
  * Description: Allows you to build custom RSS feeds for email marketing
  * Author:      CultivateWP
  * Author URI:  https://cultivatewp.com/
- * Version:     1.1.0
+ * Version:     1.2.0
  * Requires PHP: 7.0
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -36,7 +36,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CWP_RSS_BUILDER_VERSION', '1.1.0' );
+define( 'CWP_RSS_BUILDER_VERSION', '1.2.0' );
 
 require_once __DIR__ . '/includes/class-cwp-rss-builder-settings.php';
 require_once __DIR__ . '/includes/class-cwp-rss-builder-editor.php';

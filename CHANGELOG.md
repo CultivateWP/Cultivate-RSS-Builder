@@ -2,8 +2,11 @@
 
 All notable changes to this project will be documented in this file, formatted via [this recommendation](http://keepachangelog.com/).
 
-## [Unreleased]
+## [1.2.0] = 2026-11-20
+
 - Add a native block-editor RSS title panel that saves with the normal post REST update, retaining a classic-editor fallback.
+- Keep both feed URLs working when administrators create feeds at the same time.
+- Preserve category restrictions for legacy unchecked newsletter settings and timezone offsets in copied feed links.
 - Preserve existing feed hashes, serialized options, RSS-title metadata, international taxonomy slugs, and legacy feed parameters.
 - Require an administrator capability and nonce-protected POST for feed creation; keep public feed URL reads free of settings writes.
 - Validate settings and title inputs, check object-level edit permissions, and escape admin and feed output.
