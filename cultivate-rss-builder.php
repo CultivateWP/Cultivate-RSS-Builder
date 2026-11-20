@@ -58,4 +58,6 @@ function updater() {
 		'cultivate-rss-builder'
 	);
 }
-add_action( 'admin_init', __NAMESPACE__ . '\updater' );
+if ( is_admin() || ( defined( 'DOING_CRON' ) && DOING_CRON ) || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+	add_action( 'plugins_loaded', __NAMESPACE__ . '\updater' );
+}

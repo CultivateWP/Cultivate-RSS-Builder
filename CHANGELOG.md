@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file, formatted v
 ## [1.2.0] = 2026-11-20
 
 - Add a native block-editor RSS title panel that saves with the normal post REST update, retaining a classic-editor fallback.
+- Register the GitHub updater in time for manual checks, scheduled checks and WP-CLI.
 - Keep both feed URLs working when administrators create feeds at the same time.
 - Preserve category restrictions for legacy unchecked newsletter settings and timezone offsets in copied feed links.
 - Preserve existing feed hashes, serialized options, RSS-title metadata, international taxonomy slugs, and legacy feed parameters.
