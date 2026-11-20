@@ -1,0 +1,24 @@
+{
+  "name": "cultivatewp/rss-builder",
+  "description": "Development checks for Cultivate RSS Builder",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "require-dev": {
+    "phpcompatibility/phpcompatibility-wp": "^2.1",
+    "wp-coding-standards/wpcs": "^3.0"
+  },
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    },
+    "sort-packages": true
+  },
+  "scripts": {
+    "lint:php": "find . -path './vendor' -prune -o -path './includes/updater' -prune -o -path './node_modules' -prune -o -name '*.php' -print0 | xargs -0 -n 1 php -l",
+    "lint:wpcs": "phpcs -ps",
+    "check": [
+      "@lint:php",
+      "@lint:wpcs"
+    ]
+  }
+}

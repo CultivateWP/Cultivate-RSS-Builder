@@ -125,7 +125,7 @@ class CWP_RSS_Builder_Editor {
 		$route  = $request->get_route();
 		$id     = absint( $request['id'] );
 		$method = $request->get_method();
-		$post = $id ? get_post( $id ) : null;
+		$post   = $id ? get_post( $id ) : null;
 		if ( ! $post || $post->post_type !== $type->name || 0 !== strcasecmp( $route, $base . '/' . $id ) || ! in_array( $method, array( 'POST', 'PUT', 'PATCH' ), true ) ) {
 			return new WP_Error( 'cwp_rss_unsupported_route', __( 'The RSS title cannot be changed in this request.', 'cultivate-rss-builder' ), array( 'status' => 400 ) );
 		}
@@ -291,8 +291,7 @@ class CWP_RSS_Builder_Editor {
 		if ( ! is_array( $boxes ) || ! $post instanceof WP_Post || ! $this->ready_post || $this->ready_post !== (int) $post->ID ) {
 			return $boxes;
 		}
-		$post_boxes = isset( $boxes[ $post->post_type ] ) ? $boxes[ $post->post_type ] : array();
-		foreach ( $post_boxes as $location => $priorities ) {
+		foreach ( $boxes[ $post->post_type ] ?? array() as $location => $priorities ) {
 			foreach ( $priorities as $priority => $registered ) {
 				unset( $boxes[ $post->post_type ][ $location ][ $priority ]['be_rss_builder'] );
 			}
