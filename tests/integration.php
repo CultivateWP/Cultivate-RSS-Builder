@@ -147,18 +147,24 @@ try {
 	$builder->metabox_save( $id, get_post( $id ) );
 	cwp_rss_assert( esc_attr( $classic ) === get_post_meta( $id, 'be_rss_post_title', true ), 'Classic save checks actual post permission.' );
 
-	$old_settings = array( 'posts_per_page' => '37', 'offset' => '2', 'date' => '-1 year', 'orderby' => 'modified' );
+	$old_settings = array( 'posts_per_page' => '37', 'offset' => '2', 'date' => '-1 year', 'orderby' => 'modified', 'category' => 'newsletter', 'no_newsletter' => '0' );
 	$old_hash = sha1( serialize( $old_settings ) );
-	$old_map = array( $old_hash => $old_settings );
+	$incompatible_settings = array( 'offset' => 'historical value' );
+	$incompatible_hash = sha1( serialize( $incompatible_settings ) );
+	$old_map = array( $old_hash => $old_settings, $incompatible_hash => $incompatible_settings );
 	update_option( 'be_rss_builder', maybe_serialize( $old_map ), false );
 	$raw = get_option( 'be_rss_builder' );
 	wp_set_current_user( 0 );
 	$_GET = array( 'be_filter' => $old_hash );
-	cwp_rss_assert( $old_settings === $builder->get_feed_data(), 'Existing hash and serialized settings remain readable without migration.' );
+	$expected_settings = $old_settings;
+	$expected_settings['no_newsletter'] = '';
+	cwp_rss_assert( $expected_settings === $builder->get_feed_data(), 'A saved legacy feed keeps its category and other filters when the checkbox is zero.' );
 	cwp_rss_assert( $raw === get_option( 'be_rss_builder' ), 'Public hash read cannot rewrite storage.' );
-	$_GET = array( 'be_filter' => array( 'posts_per_page' => '37', 'recent_date' => '3 months ago' ) );
+	$_GET = array( 'be_filter' => array( 'posts_per_page' => '37', 'no_newsletter' => '0', 'date' => '2025-01-02T00:00:00+05:30' ) );
 	cwp_rss_assert( '37' === $builder->get_feed_data()['posts_per_page'], 'Old public array URLs support values outside the UI dropdown.' );
-	$builder->get_hash(); $builder->get_feed_url();
+	$builder->get_hash();
+	wp_parse_str( wp_parse_url( $builder->get_feed_url(), PHP_URL_QUERY ), $linked_query );
+	cwp_rss_assert( '2025-01-02T00:00:00+05:30' === $linked_query['be_filter']['date'], 'Following an inline feed link preserves the timezone offset.' );
 	cwp_rss_assert( $raw === get_option( 'be_rss_builder' ), 'Public array feed/hash/URL helpers must be read-only.' );
 	$_GET = array( 'be_filter' => array( 'orderby' => array( 'nested' ) ) );
 	cwp_rss_assert( array() === $builder->get_feed_data(), 'Nested public settings cannot reach query sinks.' );
@@ -167,7 +173,7 @@ try {
 	$new_hash = $builder->get_settings_hash( array( 'orderby' => 'comment_count', 'posts_per_page' => '23' ) );
 	cwp_rss_assert( is_string( $new_hash ), 'Authorized settings creation succeeds.' );
 	$map = CWP_RSS_Builder_Settings::read();
-	cwp_rss_assert( $old_map[ $old_hash ] === $map[ $old_hash ] && isset( $map[ $new_hash ] ), 'Adding a feed preserves every existing hash entry.' );
+	cwp_rss_assert( isset( $map[ $new_hash ] ) && $old_map === array_diff_key( $map, array( $new_hash => true ) ), 'Adding a feed preserves every existing hash entry.' );
 	cwp_rss_assert( is_string( get_option( 'be_rss_builder' ) ), 'Retain the existing string-valued storage shape.' );
 	update_option( 'be_rss_builder', 'broken legacy settings' );
 	$malformed_before = get_option( 'be_rss_builder' );

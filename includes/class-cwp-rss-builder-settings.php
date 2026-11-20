@@ -28,6 +28,10 @@ class CWP_RSS_Builder_Settings {
 			if ( ! is_string( $key ) || ! in_array( $key, $allowed, true ) ) {
 				continue;
 			}
+			// Legacy feeds can store an unchecked checkbox as zero, false, or an off string.
+			if ( 'no_newsletter' === $key && false === filter_var( $value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE ) ) {
+				$value = '';
+			}
 			if ( ! is_string( $value ) && ! is_int( $value ) ) {
 				return new WP_Error( 'cwp_rss_invalid_setting', __( 'Feed settings must contain text or numbers.', 'cultivate-rss-builder' ) );
 			}
@@ -84,16 +88,6 @@ class CWP_RSS_Builder_Settings {
 		$feeds = self::read();
 		if ( is_wp_error( $feeds ) ) {
 			return $feeds;
-		}
-		foreach ( $feeds as $entry ) {
-			if ( ! is_array( $entry ) || is_wp_error( self::validate( $entry ) ) ) {
-				return new WP_Error( 'cwp_rss_invalid_storage', __( 'Saved feed settings need attention. They have not been changed.', 'cultivate-rss-builder' ) );
-			}
-			foreach ( $entry as $value ) {
-				if ( ! is_scalar( $value ) && null !== $value ) {
-					return new WP_Error( 'cwp_rss_invalid_storage', __( 'Saved feed settings need attention. They have not been changed.', 'cultivate-rss-builder' ) );
-				}
-			}
 		}
 		if ( ! array_key_exists( $hash, $feeds ) ) {
 			$feeds[ $hash ] = $settings;

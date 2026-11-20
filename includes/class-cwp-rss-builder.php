@@ -63,7 +63,6 @@ class CWP_RSS_Builder {
 		if ( version_compare( $GLOBALS['wp_version'], '5.3', '>=' ) ) {
 			new CWP_RSS_Builder_Editor( $this );
 		}
-
 	}
 
 	/**
@@ -253,7 +252,11 @@ class CWP_RSS_Builder {
 	public function get_feed_url() {
 		$filter = $this->requested_filter();
 		$feed   = get_bloginfo( 'rss2_url' );
-		return false === $filter || array() === $filter ? $feed : add_query_arg( $this->settings_key, $filter, $feed );
+		if ( false === $filter || array() === $filter ) {
+			return $feed;
+		}
+		// add_query_arg() expects new values to be URL-encoded.
+		return add_query_arg( $this->settings_key, rawurlencode_deep( $filter ), $feed );
 	}
 
 
