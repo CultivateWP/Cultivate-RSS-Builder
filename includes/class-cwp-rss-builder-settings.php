@@ -12,6 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 /** Validate settings and preserve the existing hash/serialized-option contract. */
 class CWP_RSS_Builder_Settings {
 
+	const OPTION_PREFIX = 'cwp_rss_builder_feed_';
+
 	/**
 	 * Validate settings without writing anything.
 	 *
@@ -55,17 +57,26 @@ class CWP_RSS_Builder_Settings {
 	}
 
 	/**
-	 * Decode the plugin's extra legacy layer without instantiating objects.
+	 * Find an individual feed or a feed in the original shared option.
 	 *
-	 * @return array|WP_Error Saved entries or an error.
+	 * @param string $hash Feed hash.
+	 * @return mixed Stored settings, false if missing, or WP_Error for unreadable storage.
 	 */
-	public static function read() {
+	public static function read( $hash ) {
+		$settings = get_option( self::OPTION_PREFIX . $hash, false );
+		if ( false !== $settings ) {
+			return $settings;
+		}
+
 		$feeds = get_option( 'be_rss_builder', array() );
 		if ( is_string( $feeds ) && is_serialized( $feeds ) ) {
 			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- Preserve legacy storage without object instantiation; reject malformed data below.
 			$feeds = @unserialize( $feeds, array( 'allowed_classes' => false ) );
 		}
-		return is_array( $feeds ) ? $feeds : new WP_Error( 'cwp_rss_invalid_storage', __( 'Saved feed settings could not be read. They have not been changed.', 'cultivate-rss-builder' ) );
+		if ( ! is_array( $feeds ) ) {
+			return new WP_Error( 'cwp_rss_invalid_storage', __( 'Saved feed settings could not be read. They have not been changed.', 'cultivate-rss-builder' ) );
+		}
+		return $feeds[ $hash ] ?? false;
 	}
 
 	/**
@@ -85,13 +96,19 @@ class CWP_RSS_Builder_Settings {
 		$settings = array_filter( $settings );
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- Preserve hashes used by existing feed URLs.
 		$hash  = sha1( serialize( $settings ) );
-		$feeds = self::read();
-		if ( is_wp_error( $feeds ) ) {
-			return $feeds;
+		$saved = self::read( $hash );
+		if ( is_wp_error( $saved ) ) {
+			return $saved;
 		}
-		if ( ! array_key_exists( $hash, $feeds ) ) {
-			$feeds[ $hash ] = $settings;
-			if ( ! update_option( 'be_rss_builder', maybe_serialize( $feeds ), false ) ) {
+		if ( false !== $saved ) {
+			return $hash;
+		}
+
+		$option = self::OPTION_PREFIX . $hash;
+		if ( ! add_option( $option, $settings, '', false ) ) {
+			// A concurrent identical submission may have inserted this key after our first read.
+			wp_cache_delete( 'notoptions', 'options' );
+			if ( get_option( $option ) !== $settings ) {
 				return new WP_Error( 'cwp_rss_save_failed', __( 'The feed could not be saved.', 'cultivate-rss-builder' ) );
 			}
 		}

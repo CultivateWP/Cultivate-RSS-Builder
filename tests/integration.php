@@ -50,6 +50,13 @@ $before_global_post = isset( $GLOBALS['post'] ) ? $GLOBALS['post'] : null;
 $before_wp_query = $GLOBALS['wp_query'];
 $before_timezone = get_option( 'timezone_string' );
 $had_custom_fields = post_type_supports( 'post', 'custom-fields' );
+$feed_options = array();
+$track_feed = static function ( $name ) use ( &$feed_options ) {
+	if ( 0 === strpos( $name, 'cwp_rss_builder_feed_' ) ) {
+		$feed_options[] = $name;
+	}
+};
+add_action( 'added_option', $track_feed );
 $post_ids = array();
 $users = array();
 $terms = array();
@@ -170,11 +177,24 @@ try {
 	cwp_rss_assert( array() === $builder->get_feed_data(), 'Nested public settings cannot reach query sinks.' );
 	cwp_rss_assert( is_wp_error( $builder->get_settings_hash( array( 'orderby' => 'modified' ) ) ), 'Unauthenticated programmatic settings writes are denied.' );
 	wp_set_current_user( $admin );
-	$new_hash = $builder->get_settings_hash( array( 'orderby' => 'comment_count', 'posts_per_page' => '23' ) );
-	cwp_rss_assert( is_string( $new_hash ), 'Authorized settings creation succeeds.' );
-	$map = CWP_RSS_Builder_Settings::read();
-	cwp_rss_assert( isset( $map[ $new_hash ] ) && $old_map === array_diff_key( $map, array( $new_hash => true ) ), 'Adding a feed preserves every existing hash entry.' );
-	cwp_rss_assert( is_string( get_option( 'be_rss_builder' ) ), 'Retain the existing string-valued storage shape.' );
+	// Complete a second save after the first reader has obtained its legacy snapshot.
+	$other_settings = array( 'category' => 'second-' . strtolower( $token ) );
+	$new_settings = array( 'category' => 'first-' . strtolower( $token ) );
+	$other_hash = null;
+	$overlap = static function ( $snapshot ) use ( &$overlap, &$other_hash, $builder, $other_settings ) {
+		remove_filter( 'option_be_rss_builder', $overlap );
+		$other_hash = $builder->get_settings_hash( $other_settings );
+		return $snapshot;
+	};
+	add_filter( 'option_be_rss_builder', $overlap );
+	$new_hash = $builder->get_settings_hash( $new_settings );
+	remove_filter( 'option_be_rss_builder', $overlap );
+	foreach ( array( array( $other_hash, $other_settings ), array( $new_hash, $new_settings ) ) as list( $hash, $expected ) ) {
+		$_GET = array( 'be_filter' => $hash );
+		cwp_rss_assert( is_string( $hash ) && $expected === $builder->get_feed_data(), 'Each overlapping save returns a URL that resolves to its own settings.' );
+	}
+	cwp_rss_assert( $new_hash === $builder->get_settings_hash( $new_settings ), 'Retrying a feed save returns the same usable hash.' );
+	cwp_rss_assert( $raw === get_option( 'be_rss_builder' ), 'Creating new feeds preserves the serialized legacy map.' );
 	update_option( 'be_rss_builder', 'broken legacy settings' );
 	$malformed_before = get_option( 'be_rss_builder' );
 	cwp_rss_assert( is_wp_error( $builder->get_settings_hash( array( 'orderby' => 'modified' ) ) ), 'Malformed storage is not replaced with an empty map.' );
@@ -286,6 +306,8 @@ try {
 
 	WP_CLI::success( $GLOBALS['cwp_rss_test_count'] . ' real WordPress assertions passed on WordPress ' . get_bloginfo( 'version' ) . ' / PHP ' . PHP_VERSION . '.' );
 } finally {
+	remove_action( 'added_option', $track_feed );
+	foreach ( $feed_options as $name ) { delete_option( $name ); }
 	remove_filter( 'wp_redirect', $redirect_handler, -PHP_INT_MAX );
 	remove_filter( 'wp_die_handler', $die_handler );
 	remove_filter( 'be_rss_builder_post_types', $allowed_types );

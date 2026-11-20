@@ -296,11 +296,11 @@ class CWP_RSS_Builder {
 		if ( false === $filter ) {
 			return array();
 		}
-		$feeds = CWP_RSS_Builder_Settings::read();
-		if ( is_wp_error( $feeds ) || ! isset( $feeds[ $filter ] ) ) {
+		$saved = CWP_RSS_Builder_Settings::read( $filter );
+		if ( false === $saved || is_wp_error( $saved ) ) {
 			return array();
 		}
-		$settings = CWP_RSS_Builder_Settings::validate( $feeds[ $filter ] );
+		$settings = CWP_RSS_Builder_Settings::validate( $saved );
 		return is_wp_error( $settings ) ? array() : $settings;
 	}
 
